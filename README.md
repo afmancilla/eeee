@@ -1,124 +1,273 @@
-## 8.2 Medida de racionalidad
+# Plan de Implementación del Agente para el Juego Quarto
 
-Para evaluar la racionalidad del agente (su capacidad de tomar decisiones autónomas cercanas a un comportamiento ideal), proponemos los siguientes estadísticos:
+## 1. Descripción General
 
-1. **Tasa de victoria**
+Este documento describe el plan de implementación de un agente jugador de Quarto usando técnicas de búsqueda adversarial, incluyendo interfaces gráfica (Tkinter) y de línea de comandos.
 
-   * **Descripción**: Porcentaje de partidas ganadas por el agente frente a oponentes de referencia (jugadores humanos de nivel medio o agentes heurísticos).
-   * **Cálculo**:
+## 2. Componentes Principales
 
-     $$
-       \text{Tasa de victoria} = \frac{\text{Victorias}}{\text{Total de partidas}} \times 100\%
-     $$
-   * **Justificación**: Un agente racional debería maximizar su probabilidad de victoria en un entorno adversarial (Van den Herik, Uiterwijk, & van Rijswijck, 2002).
-   * **Cita**: (Van den Herik et al., 2002).
+### 2.1 Estructura de Clases
 
-2. **Razón de optimalidad de movimiento**
+```mermaid
+classDiagram
+    class Tablero {
+        -casillas: Pieza[][]
+        -piezasDisponibles: Lista<Pieza>
+        -piezaActiva: Pieza
+        +colocarPieza(pieza, posicion)
+        +obtenerMovimientosValidos()
+        +verificarVictoria()
+    }
 
-   * **Descripción**: Porcentaje de movimientos que coinciden con la acción óptima dictada por un minimax de búsqueda completa en ese subárbol (Schaeffer, Lake, Lu, & Bryant, 1997).
-   * **Cálculo**:
+    class Pieza {
+        -tamanio: bool
+        -color: bool
+        -forma: bool
+        -solidez: bool
+        +obtenerAtributo(tipo)
+        +coincideCon(otra)
+    }
 
-     $$
-       \text{Razón de optimalidad de movimiento} 
-       = \frac{\text{Movimientos óptimos ejecutados}}{\text{Movimientos evaluados}} \times 100\%
-     $$
-   * **Justificación**: Indica cuán frecuentemente el agente escoge la jugada que un jugador “perfecto” (minimax exhaustivo) habría elegido.
-   * **Cita**: (Schaeffer et al., 1997).
+    class Agente {
+        -frecuenciaMuestreo: float
+        -memoria: Lista
+        -funcionEvaluacion
+        +percibir()
+        +decidir()
+        +actuar()
+    }
 
-3. **Regret promedio**
+    class EstadoJuego {
+        -tablero: Tablero
+        -jugadorActual: int
+        -faseJuego: Fase
+        +esTerminal()
+        +obtenerMovimientosValidos()
+    }
 
-   * **Descripción**: Diferencia promedio entre la evaluación óptima del minimax y la evaluación que el agente asigna a la jugada elegida, para cada estado (Savage, 1954).
-   * **Cálculo**:
+    class InterfazTK {
+        -root: tk.Tk
+        -canvas_tablero: tk.Canvas
+        -canvas_piezas: tk.Canvas
+        -stats_widgets: Dict
+        -historial_jugadas: Lista
+        +dibujarTablero()
+        +dibujarPiezas()
+        +procesarEventos()
+    }
 
-     $$
-       \text{Regret promedio} 
-       = \frac{1}{N} \sum_{i=1}^{N} \bigl(V^*(s_i) - V_A(s_i)\bigr),
-     $$
+    class InterfazCLI {
+        -historialJugadas: Lista
+        +mostrarTablero()
+        +mostrarPiezas()
+        +procesarComando()
+    }
 
-     donde $V^*(s_i)$ es la utilidad del movimiento óptimo y $V_A(s_i)$ la utilidad de la jugada seleccionada por el agente.
-   * **Justificación**: Cuanto menor sea este valor, más racional es el agente.
-   * **Cita**: (Savage, 1954).
+    Agente -- EstadoJuego
+    EstadoJuego -- Tablero
+    Tablero -- Pieza
+    InterfazTK -- EstadoJuego
+    InterfazCLI -- EstadoJuego
+```
 
-4. **Profundidad de búsqueda promedio**
+## 3. Diseño del Agente
 
-   * **Descripción**: Profundidad media del árbol de búsqueda alcanzada en cada turno antes de poda o tope (Russell & Norvig, 2016).
-   * **Cálculo**:
+### 3.1 Tipo de Agente
+- **Clasificación Principal**: Agente Proactivo
+- **Clasificación Secundaria**: Agente basado en Objetivos
+  - Utiliza minimax con poda alfa-beta
+  - Mantiene representación interna del estado
+  - Evalúa estados futuros para lograr victoria
 
-     $$
-       \text{Profundidad de búsqueda promedio} 
-       = \frac{1}{N} \sum_{i=1}^{N} d_i,
-     $$
+### 3.2 Características del Entorno
+1. **Accesibilidad**: Accesible
+   - Estado completo del tablero visible
+   - Atributos de todas las piezas conocidos
+   - Fase actual del juego clara
 
-     donde $d_i$ es la profundidad expandida en el turno $i$.
-   * **Justificación**: Mayor profundidad promedio implica que el agente explora más el espacio de estados (potencialmente más racional), sujeto a limitaciones de tiempo.
-   * **Cita**: (Russell & Norvig, 2016).
+2. **Determinismo**: Determinista
+   - Acciones tienen resultados predecibles
+   - Sin elementos aleatorios
 
-5. **Nodos expandidos promedio por turno**
+3. **Estructura de Episodios**: Secuencial
+   - Movimientos pasados afectan estados futuros
+   - Historia del juego impacta decisiones
 
-   * **Descripción**: Número medio de nodos que el agente explora en cada turno usando minimax + poda Alfa-Beta (Russell & Norvig, 2016).
-   * **Cálculo**:
+4. **Dinamismo**: Estático
+   - Entorno solo cambia por acciones del agente/oponente
+   - Sin cambios dependientes del tiempo
 
-     $$
-       \text{Nodos expandidos promedio} 
-       = \frac{1}{N} \sum_{i=1}^{N} n_i,
-     $$
+5. **Espacio de Estados**: Discreto
+   - Posiciones finitas (4x4)
+   - Combinaciones finitas de piezas
+   - Condiciones de victoria claras
 
-     donde $n_i$ es la cantidad de nodos evaluados en el turno $i$.
-   * **Justificación**: Un agente más eficiente expande menos nodos para lograr un nivel similar de desempeño.
-   * **Cita**: (Russell & Norvig, 2016).
+## 4. Interfaces de Usuario
 
-6. **Tiempo de decisión promedio**
+### 4.1 Interfaz Gráfica (Tkinter)
+1. **Componentes Visuales**
+   - Panel izquierdo: Tablero 4x4
+   - Panel central: Piezas disponibles y log
+   - Panel derecho: Estado y estadísticas
+   - Indicadores de fase y turno
+   - Estadísticas en tiempo real
 
-   * **Descripción**: Tiempo medio que el agente tarda en decidir (colocar + elegir) en cada turno (Campbell, Hoane, & Hsu, 2002).
-   * **Cálculo**:
+2. **Interacción**
+   - Selección de piezas con mouse
+   - Colocación en tablero con click
+   - Feedback visual de hover y selección
+   - Botones para reiniciar/salir
 
-     $$
-       \text{Tiempo de decisión promedio} 
-       = \frac{1}{N} \sum_{i=1}^{N} t_i,
-     $$
+3. **Elementos de la Interfaz**
+```python
+class InterfazTK:
+    def __init__(self):
+        self.root = None
+        self.canvas_tablero = None
+        self.canvas_piezas = None
+        self.stats_widgets = {}
+        self.historial_jugadas = []
+        
+    def _dibujar_tablero(self):
+        """Renderiza el tablero 4x4 y piezas"""
+        
+    def _dibujar_piezas(self):
+        """Muestra piezas disponibles"""
+        
+    def _update_info(self):
+        """Actualiza estado e indicadores"""
+```
 
-     donde $t_i$ es el tiempo (en ms) para generar la jugada en el turno $i$.
-   * **Justificación**: Un agente racional debe balancear calidad de jugada con rapidez.
-   * **Cita**: (Campbell et al., 2002).
+### 4.2 Interfaz CLI
+1. **Visualización**
+   - Representación ASCII del tablero
+   - Lista numerada de piezas disponibles
+   - Historial de movimientos
+   - Estado actual del juego
 
-7. **Tasa de empates**
+2. **Comandos**
+   - `colocar X Y`: Coloca pieza en coordenadas
+   - `seleccionar N`: Elige pieza número N
+   - `mostrar`: Actualiza visualización
+   - `salir`: Termina el juego
 
-   * **Descripción**: Proporción de empates frente a oponentes de capacidad similar (Silver et al., 2016).
-   * **Cálculo**:
+## 5. Sensores y Percepciones
 
-     $$
-       \text{Tasa de empates} 
-       = \frac{\text{Partidas empatadas}}{\text{Total de partidas}} \times 100\%
-     $$
-   * **Justificación**: Un alto porcentaje de empates contra un oponente equivalente sugiere que ambos juegan cerca del óptimo.
-   * **Cita**: (Silver et al., 2016).
+### 5.1 Sensores
+1. **Sensor de Tablero**
+   - Lee posiciones actuales
+   - Actualiza matriz 4x4
+   - Frecuencia: T segundos (configurable)
 
----
+2. **Seguidor de Piezas**
+   - Monitorea piezas disponibles
+   - Rastrea atributos
+   - Actualiza después de cada colocación
 
-### Resumen de métricas recomendadas
+### 5.2 Percepciones
+1. **Estructura**
+   - Matriz de estado del tablero (4x4)
+   - Lista de piezas disponibles
+   - Pieza activa actual
+   - Fase actual del juego
 
-| Métrica                                | Fórmula / Definición                                                               | Cita (Autor, Año)                                 |
-| -------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------- |
-| **Tasa de victoria**                   | $\frac{\#\text{Victorias}}{\#\text{Total partidas}} \times 100\%$                  | (Van den Herik, Uiterwijk, & van Rijswijck, 2002) |
-| **Razón de optimalidad de movimiento** | $\frac{\#\text{Movimientos óptimos}}{\#\text{Movimientos evaluados}} \times 100\%$ | (Schaeffer, Lake, Lu, & Bryant, 1997)             |
-| **Regret promedio**                    | $\frac{1}{N} \sum (V^*(s_i) - V_A(s_i))$                                           | (Savage, 1954)                                    |
-| **Profundidad de búsqueda promedio**   | $\frac{1}{N} \sum d_i$                                                             | (Russell & Norvig, 2016)                          |
-| **Nodos expandidos promedio**          | $\frac{1}{N} \sum n_i$                                                             | (Russell & Norvig, 2016)                          |
-| **Tiempo de decisión promedio**        | $\frac{1}{N} \sum t_i$                                                             | (Campbell, Hoane, & Hsu, 2002)                    |
-| **Tasa de empates**                    | $\frac{\#\text{Empates}}{\#\text{Total partidas}} \times 100\%$                    | (Silver et al., 2016)                             |
+2. **Muestreo**
+   - Frecuencia: 1/T Hz (configurable)
+   - Canales: 3 (tablero, piezas, fase)
 
----
+## 6. Monitoreo y Estadísticas
 
-## Referencias
+### 6.1 Estadísticas en Tiempo Real
+- Decisiones tomadas
+- Tiempo promedio de decisión
+- Nodos explorados
+- Podas realizadas
 
-* Campbell, M., Hoane, A. J., & Hsu, F. H. (2002). *Deep Blue*. Artificial Intelligence, 134(1–2), 57–83. [https://doi.org/10.1016/S0004-3702(02)00065-1](https://doi.org/10.1016/S0004-3702%2802%2900065-1)
-* Müller, B. (2009). *Quarto – Análisis del juego y estrategias de búsqueda*. Barcelona: Ediciones Gigamic. ISBN 978-84-9926-123-4.
-* Russell, S. J., & Norvig, P. (2016). *Artificial Intelligence: A Modern Approach* (3ra ed.). Pearson. ISBN 978-0-13-604259-4.
-* Santana, J., & López, M. (2012). Algoritmos adversariales para juegos de mesa: Aplicación en Quarto. Revista Iberoamericana de Inteligencia Artificial, 14(2), 45–58. [https://doi.org/10.1016/j.riai.2012.05.003](https://doi.org/10.1016/j.riai.2012.05.003)
-* Savage, L. J. (1954). *The Foundations of Statistics*. Wiley.
-* Schaeffer, J., Lake, R., Lu, P., & Bryant, M. (1997). *Chinook: The world man–machine checkers champion*. AI Magazine, 18(1), 21–29.
-* Silver, D., Huang, A., Maddison, C. J., Guez, A., Sifre, L., van den Driessche, G., Schrittwieser, J., Antonoglou, I., Panneershelvam, V., Lanctot, M., Dieleman, S., Grewe, D., Nham, J., Kalchbrenner, N., Sutskever, I., Lillicrap, T., Leach, M., Kavukcuoglu, K., Graepel, T., & Hassabis, D. (2016). Mastering the game of Go with deep neural networks and tree search. *Nature*, 529(7587), 484–489. [https://doi.org/10.1038/nature16961](https://doi.org/10.1038/nature16961)
-* Van den Herik, H. J., Uiterwijk, J. W. H. M., & van Rijswijck, J. (2002). Games solved: A success story. *International Computer Games Association Journal*, 25(3), 178–189. [https://doi.org/10.1002/icga.160](https://doi.org/10.1002/icga.160)
+### 6.2 Capturas y Logs
+- Screenshots automáticos (opcional)
+- Registro de jugadas en archivo log
+- Estadísticas finales en archivo
+
+## 7. Estructura de Archivos
 
 ```
+quarto/
+├── src/
+│   ├── juego/
+│   │   ├── __init__.py
+│   │   ├── tablero.py
+│   │   ├── pieza.py
+│   │   └── estado.py
+│   ├── agente/
+│   │   ├── __init__.py
+│   │   └── agente.py
+│   ├── interfaces/
+│   │   ├── __init__.py
+│   │   ├── tk_gui.py
+│   │   └── cli.py
+│   └── utils/
+│       ├── __init__.py
+│       └── constantes.py
+├── tests/
+│   ├── test_juego.py
+│   ├── test_agente.py
+│   └── test_interfaces.py
+├── README.md
+└── requirements.txt
 ```
+
+## 8. Dependencias
+
+1. **Bibliotecas Requeridas**
+   - Tkinter: Interfaz gráfica
+   - PIL: Capturas de pantalla
+   - Time: Control de muestreo
+   - Logging: Seguimiento de rendimiento
+
+2. **Herramientas de Desarrollo**
+   - Python 3.8+
+   - pytest
+   - Black (formateo)
+   - pylint (calidad de código)
+
+## 9. Secuencia de Implementación
+
+### 9.1 Fase 1: Lógica Base
+1. Implementación del Tablero
+2. Clase Pieza con atributos
+3. Gestión básica de estado
+4. Verificación de victoria
+
+### 9.2 Fase 2: Interfaces
+1. Implementación CLI
+2. Implementación GUI con Tkinter
+3. Sistema de estadísticas integrado
+4. Capturas y logs
+
+### 9.3 Fase 3: Agente
+1. Sistema de percepción
+2. Validación de acciones
+3. Representación de estado
+4. Toma de decisiones
+
+### 9.4 Fase 4: Optimización
+1. Eficiencia de memoria
+2. Poda de búsqueda
+3. Ajuste de heurísticas
+4. Métricas de rendimiento
+
+## 10. Configuración por Defecto
+
+### 10.1 Parámetros de Inicio
+1. Modo: Interfaz Tkinter
+2. Primer jugador: Humano
+3. Frecuencia del agente: 1.0 Hz
+4. Capturas habilitadas
+
+### 10.2 Almacenamiento
+1. Directorio base: `juegos/`
+2. Subdirectorios por partida: `ddmm-hhmmss/`
+3. Archivos guardados:
+   - Capturas: `N.png`
+   - Log: `log.txt`
+   - Estadísticas: `stats.txt`
